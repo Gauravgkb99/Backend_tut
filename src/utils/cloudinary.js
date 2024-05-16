@@ -3,8 +3,8 @@ import fs from "fs";
           
 cloudinary.config({ 
   cloud_name: process.env.CLOUD_NAME, 
-  api_key: process.env.API_KEY, 
-  api_secret: process.env.API_SECRET, 
+  api_key: process.env.CLOUDINARY_API_KEY, 
+  api_secret: process.env.CLOUDINARY_API_SECRET, 
 });
 
 const uploadOnCloudinary = async (localFilePath) => {
@@ -14,11 +14,15 @@ const uploadOnCloudinary = async (localFilePath) => {
         const response = await cloudinary.uploader.upload(localFilePath, {
             resource_type: "auto"
         })
-
-        console.log("file is uploaded on cloudinary: ", response.url);
+        
+        // console.log("file is uploaded on cloudinary ", response.url)
+        fs.unlinkSync(localFilePath)
+        return response;
     }
     catch(error){
+        console.log("Problem while uploading content on cloudinary")
         fs.unlinkSync(localFilePath)
+        return null;
     }
 }
 
