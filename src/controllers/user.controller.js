@@ -4,6 +4,22 @@ import {User} from '../models/user.models.js'
 import { uploadOnCloudinary } from '../utils/cloudinary.js'
 import { ApiResponse } from '../utils/ApiResponse.js'
 
+const generateAccessAndRefreshTokens = async(userId) => {
+    try{
+        const user = await User.findById(userId)
+        const accessToken = user.generateAccessToken()
+        const refreshToken = user.generateRefreshToken()
+
+        user.refreshToken = refreshToken
+        await user.save({ validateBeforeSave: false })
+
+        return {accessToken, refreshToken}
+    }
+    catch(error){
+        throw new ApiError(500, "Something went wrong while generating tokens")
+    }
+}
+
 const registerUser = asyncHandler(async (req, res) => {
     const {username, email, fullName, password} = req.body
     //console.log("email: ", email)
@@ -59,7 +75,68 @@ const registerUser = asyncHandler(async (req, res) => {
     )
 })
 
-export {registerUser}
+const loginUser = asyncHandler( async (req, res) => {
+    const {username, email, password} = req.body
+
+    if(!username || !email){
+        throw new ApiError(400, "username or email is required");
+    }
+
+    const user = await User.findOne({$or : [username, email]});
+    if(!user){
+        throw new ApiError(404, "User doesn't exist")
+    }
+
+    const passwordCorrect = await user.isPasswordCorrect(password);
+
+    if(!passwordCorrect){
+        throw new ApiError(400, "Invalid User credentials")
+    } 
+
+    const {accessToken, refreshToken} = await generateAccessAndRefreshTokens(user._id)
+
+    const loggedInUser = await User.findById(user._id).select("-password -refreshToken")
+
+    // when we do this, our cookie will only be modifiable by server and not from frontend side
+    const options = {
+        httpOnly: true,
+        secure: true,
+    }
+
+    return res.status(200)
+    .cookie("accessToken", accessToken, options)
+    .cookie("refreshToken", refreshToken, options)
+    .json(
+        new ApiResponse(
+            200, 
+            {user: loggedInUser, accessToken, refreshToken},
+            "User logged in Successfully"
+        )
+    )
+})
+
+const logoutUser = asyncHandler(async (req, res) => {
+    await User.findByIdAndUpdate(req.user._id, {
+        $set: {
+            refreshToken: undefined,
+            accessToken: undefined,
+        }
+    }, {
+        new: true
+    })
+
+    const options = {
+        httpOnly: true,
+        secure: true
+    }
+
+    return res.status
+    .clearCookie("accessToken", options)
+    .clearCookie("refreshToken", options)
+    .json( new ApiResponse(200, {}, "User logged Out"))
+})
+
+export {registerUser, loginUser, logoutUser}
 
 
 // get user details from frontend
@@ -71,3 +148,14 @@ export {registerUser}
 // remove password and refresh token field from response 
 // check for user creation
 // return response
+
+// req body -> data
+// username or email verification
+// find the user
+// match the password
+// access and refresh tokens
+// send cookie
+
+// if in some case like (req, res, next) we add, sometimes we don't need
+// res or maybe req, then in that case we can just add _ in that place
+// like (req, _, next)
